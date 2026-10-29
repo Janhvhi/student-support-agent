@@ -1,34 +1,38 @@
 
-# Intelligent Student Support Agent
+# 🎓 Intelligent Student Support Agent
 
-## 1. Project Overview
+An AI-powered student support chatbot built with Python, Streamlit, and Ollama. It helps students check sample fee and scholarship records, retrieve relevant college policy information, and ask general questions using a locally running language model.
 
-The Intelligent Student Support Agent is a local AI-powered chatbot
-that helps students with fee status, scholarship status, college
-policy questions, and general student support.
+## 📌 Project Overview
 
-## 2. Technologies Used
+The Intelligent Student Support Agent demonstrates how an AI agent can route student questions to appropriate tools, retrieve relevant policy information, and generate responses using a local language model.
 
-- Python
-- Streamlit for the chat interface
-- Ollama with the Llama 3.2 1B model
-- CSV files for student records
-- JSON for persistent memory
-- Keyword-based retrieval for policy documents
+## ✨ Features
 
-## 3. Main Features
+- 💬 **Interactive Chat Interface:** Ask questions through a Streamlit chat interface.
+- 💰 **Fee Status Lookup:** Check sample student fee records using a student ID.
+- 🎓 **Scholarship Status Lookup:** Retrieve scholarship application status.
+- 📚 **Policy Retrieval:** Search relevant sections of a sample policy document.
+- 🤖 **Local AI Responses:** Generate general answers using Ollama and Llama 3.2 1B.
+- 🧠 **Persistent Preferences:** Save non-sensitive response preferences locally.
+- 📊 **Evaluation Logging:** Record response time, routing information, answer length, and retrieved policy evidence.
+- 🛡️ **Error Handling:** Handle missing student records and AI connection failures.
 
-- Interactive chat interface
-- Fee status lookup using student ID
-- Scholarship status lookup using student ID
-- Retrieval of relevant sections from a policy document
-- Local AI responses using Ollama
-- Persistent storage of non-sensitive preferences
-- Basic evaluation logging, including response time and routing
-- Error handling for missing records and AI connection failures
+## 🛠️ Technologies Used
 
-## 4. Project Structure
+| Technology | Purpose |
+|---|---|
+| Python | Application logic |
+| Streamlit | Chat interface |
+| Ollama | Local language model execution |
+| Llama 3.2 1B | Language model |
+| CSV | Sample student records and evaluation logs |
+| JSON | Local preference storage |
+| Keyword-based retrieval | Policy document search |
 
+## 📁 Project Structure
+
+```text
 student-support-agent/
 ├── app.py
 ├── ai_helper.py
@@ -39,52 +43,137 @@ student-support-agent/
 ├── test_memory.py
 ├── test_policy.py
 ├── test_tools.py
+├── requirements.txt
+├── README.md
+├── .gitignore
+├── backup/
+│   └── app.py
 └── data/
     ├── students.csv
-    ├── student_policy.txt
-    ├── memory.json
-    └── evaluation_logs.csv
+    └── student_policy.txt
+```
 
-## 5. Setup Instructions
+Local files such as `data/memory.json` and
+`data/evaluation_logs.csv` may be generated when the
+application runs and are intentionally excluded from Git.
 
-1. Install Python.
-2. Install Ollama.
-3. Download the model:
+## ⚙️ Setup and Installation
 
-   ollama run llama3.2:1b
+### 1. Prerequisites
 
-4. Activate the project virtual environment.
-5. Install dependencies:
+Install:
 
-   python -m pip install streamlit requests
+- Python 3.10 or a compatible version for your dependencies
+- [Ollama](https://ollama.com/)
+- Git (optional, for cloning and version control)
 
-6. Run the application:
+### 2. Clone the Repository
 
-   python -m streamlit run app.py
+```bash
+git clone https://github.com/Janhvhi/student-support-agent.git
+cd student-support-agent
+```
 
-7. Open http://localhost:8501 in a browser.
+Alternatively, download the repository ZIP from GitHub and extract it.
 
-## 6. Sample Test Cases
+### 3. Create a Virtual Environment
 
-| Test | Input | Expected Result |
+**Windows PowerShell:**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, you can use the environment's Python executable directly.
+
+### 4. Install Dependencies
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 5. Download and Start the Local Model
+
+Run:
+
+```bash
+ollama run llama3.2:1b
+```
+
+Wait for the model to download and start. Keep Ollama available while using the application.
+
+### 6. Start the Application
+
+Open a terminal in the project directory and run:
+
+```bash
+python -m streamlit run app.py
+```
+
+If you want to use port `8506`, run:
+
+```bash
+python -m streamlit run app.py --server.port 8506
+```
+
+Open the local URL printed in the terminal. The default Streamlit address is usually:
+
+`http://localhost:8501`
+
+When using port `8506`, open:
+
+`http://localhost:8506`
+
+## 🧪 Sample Test Cases
+
+| Test | Example Input | Expected Result |
 |---|---|---|
-| Fee status | What is my fee status for STU001? | Paid |
-| Scholarship | Check scholarship status for STU002 | Under Review |
-| Policy retrieval | What should I do if my fees are pending? | Relevant fee policy |
-| General AI | Explain student support | Local AI response |
-| Persistent memory | Save a preference | Preference stored locally |
+| Fee status | Check my fee status for STU001 | Paid |
+| Scholarship status | Check scholarship status for STU002 | Under Review |
+| Policy retrieval | What should I do if my fees are pending? | Relevant fee policy information |
+| General AI | Explain student support | Response from the local AI model |
+| Persistent memory | Save a non-sensitive preference | Preference stored locally |
 
-## 7. Limitations
+These are expected outcomes based on the sample project data; actual test results should be recorded after running the tests.
 
-- Policy retrieval currently uses keyword matching.
+## ▶️ Running Tests
+
+Run the tool, memory, and policy tests from the project directory:
+
+```bash
+python -m unittest test_tools.py test_memory.py
+python test_policy.py
+```
+
+The AI test may be an integration script rather than a formal unit test. Run it separately if needed:
+
+```bash
+python test_ai.py
+```
+
+AI integration tests require Ollama and the configured model to be available.
+
+## ⚠️ Limitations
+
+- Policy retrieval uses keyword matching rather than semantic search.
 - Student records are sample CSV data.
-- The policy document is sample content, not an official college policy.
-- Local AI response quality and speed depend on the computer.
-- Memory uses basic safeguards and is not a complete sensitive-data detector.
+- The policy document contains demonstration content, not verified official college policy.
+- Response quality and speed depend on the local model and computer resources.
+- Preference safeguards are basic and do not guarantee detection of all sensitive information.
 - Evaluation logs provide basic operational metrics, not a complete accuracy benchmark.
+- Model-reported token usage is not currently guaranteed to be available.
 
-## 8. Privacy
+## 🔐 Privacy and Security
 
-The AI model runs locally through Ollama. Student records and
-preferences are stored in local files. Do not use real sensitive
-student data in this demonstration.
+- Ollama runs the language model locally.
+- Student records and saved preferences are stored in local files.
+- Use fictional student records for demonstrations.
+- Do not commit real student information, credentials, API keys, saved preferences, or generated logs.
+- Review `.gitignore` before committing changes.
+
+## 👨‍💻 Author
+
+**Janhvhi Taunk**
+
+Developed as an academic project demonstrating local AI assistance, tool-based routing, policy retrieval, and persistent preferences.
