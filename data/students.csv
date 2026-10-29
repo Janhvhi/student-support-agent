@@ -1,0 +1,4 @@
+student_id,programme,fee_status,scholarship_status
+STU001,PGDM-BDA,Paid,Approved
+STU002,PGDM-AI,Pending,Under Review
+STU003,PGDM-BDA,Partial,Not Applied

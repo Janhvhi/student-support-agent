@@ -1,0 +1,15 @@
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+.env
+.env.*
+
+data/memory.json
+data/evaluation_logs.csv
+
+.vscode/
+.DS_Store
+Thumbs.db
