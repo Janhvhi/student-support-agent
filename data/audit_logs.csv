@@ -1,0 +1,14 @@
+timestamp,actor,action,decision,result,details
+2026-10-30T15:55:53,STU001,Login,Denied,Invalid credentials,
+2026-10-30T15:56:14,STU001,Login,Denied,Invalid credentials,
+2026-10-30T15:56:17,STU001,Login,Denied,Invalid credentials,
+2026-10-30T15:57:31,STU001,Login,Allowed,Success,
+2026-10-30T15:58:44,STU001,View own student record,Allowed,Success,student_tool
+2026-10-30T15:59:02,STU001,View own student record,Allowed,Success,student_tool
+2026-10-30T17:34:46,STU002,Login,Denied,Invalid credentials,
+2026-10-30T17:35:26,STU002,Login,Allowed,Success,
+2026-10-30T17:36:02,STU002,View own student record,Allowed,Success,student_tool
+2026-10-30T17:36:16,STU002,View own student record,Allowed,Success,student_tool
+2026-10-30T17:36:34,STU002,Access another student's record,Blocked,Denied,STU001
+2026-10-30T17:37:14,STU002,Student-requested record change,Approval required,Pending,E6330D31
+2026-10-30T17:38:39,Demo Administrator,Review sensitive request,Approved,Request approved,E6330D31

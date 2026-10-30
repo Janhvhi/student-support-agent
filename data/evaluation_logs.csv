@@ -1,0 +1,8 @@
+timestamp,route,response_time_seconds,answer_length,retrieved_evidence
+2026-10-30T15:58:44,student_tool,0.016,219,
+2026-10-30T15:59:02,student_tool,0.016,126,
+2026-10-30T15:59:23,local_ai,10.632,476,
+2026-10-30T17:36:02,student_tool,0.014,425,
+2026-10-30T17:36:16,student_tool,0.013,129,
+2026-10-30T17:36:34,security,0.003,68,
+2026-10-30T17:37:14,approval,0.004,96,
