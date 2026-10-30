@@ -1,4 +1,4 @@
-student_id,programme,fee_status,scholarship_status
-STU001,PGDM-BDA,Paid,Approved
-STU002,PGDM-AI,Pending,Under Review
-STU003,PGDM-BDA,Partial,Not Applied
+student_id,name,programme,fee_status,scholarship_status,total_fee,paid_amount,pending_amount,payment_deadline,attendance,password_hash
+STU001,Rahul Sharma,PGDM-BDA,Paid,Approved,120000,120000,0,2026-11-15,92%,caeae06f534df7b6df79764543b67587$10f68a102209d7c5bcaddbb99b792160507d05e75ec797afe31d4e508a4e811d
+STU002,Priya Patel,PGDM-AI,Pending,Under Review,120000,60000,60000,2026-11-15,86%,4583d82f1d70279094517dbe9b0ea3d0$ceb344656fb07346065f96a47af13c4644b40884c7b35e38be3ded7d7ca71cbd
+STU003,Aman Verma,PGDM-BDA,Partial,Not Applied,120000,80000,40000,2026-11-15,78%,8b4c3c9234bd302484ee66c61f979427$b87a83a6b4bdc39584e94aa0dc0884577ca896545be229cc90692ce5c1553a1e

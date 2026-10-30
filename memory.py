@@ -19,6 +19,10 @@ MAX_PREFERENCES = 50
 
 BLOCKED_TERMS = [
     "password",
+    "otp",
+    "one-time password",
+    "verification code",
+    "passcode",
     "medical",
     "diagnosis",
     "bank account",

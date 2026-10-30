@@ -2,73 +2,62 @@
 import csv
 import re
 import time
-import textwrap
 from datetime import datetime
 from pathlib import Path
-from html import escape
 
 import streamlit as st
 
-from tools import check_fee_status, check_scholarship_status
+from auth import authenticate
+from tools import (
+    check_fee_status,
+    check_scholarship_status,
+    get_academic_details,
+    get_my_profile,
+)
 from ai_helper import ask_local_ai
 from policy_search import search_policy
 from memory import load_memory, save_preference, clear_memory
+from approval import create_request, list_requests, review_request
+from audit import record
 
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
+# --------------------------------------------------
+# PAGE CONFIGURATION
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="Student Support Agent",
     page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-LOG_FILE = DATA_DIR / "evaluation_logs.csv"
+BASE = Path(__file__).resolve().parent
+DATA = BASE / "data"
+DATA.mkdir(exist_ok=True)
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOG = DATA / "evaluation_logs.csv"
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "last_evidence" not in st.session_state:
-    st.session_state.last_evidence = ""
-
-
-# ============================================================
-# 2. HTML RENDERING HELPER
-# ============================================================
-
-def render_html(content):
-    """Render HTML instead of displaying HTML tags as text."""
-    cleaned_content = textwrap.dedent(content).strip()
-
-    if hasattr(st, "html"):
-        st.html(cleaned_content)
-    else:
-        st.markdown(cleaned_content, unsafe_allow_html=True)
+for key, default in [
+    ("messages", []),
+    ("last_evidence", ""),
+    ("student", None),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 
-# ============================================================
-# 3. DARK BLUE-PURPLE THEME
-# ============================================================
+# --------------------------------------------------
+# CUSTOM UI DESIGN
+# --------------------------------------------------
 
-render_html("""
-<style>
-.stApp {
-    background:
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background:
         radial-gradient(
             ellipse at 80% 5%,
-            rgba(0, 91, 210, 0.20),
-            transparent 38%
-        ),
-        radial-gradient(
-            ellipse at 12% 75%,
-            rgba(102, 25, 255, 0.20),
+            rgba(0,91,210,.18),
             transparent 38%
         ),
         linear-gradient(
@@ -77,370 +66,312 @@ render_html("""
             #101027 55%,
             #071729
         );
-    color: #E8ECFF;
-}
+        color: #E8ECFF;
+    }
 
-.block-container {
-    max-width: 1250px;
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
-}
+    .block-container {
+        max-width: 1100px;
+        padding-top: 1.5rem;
+    }
 
-[data-testid="stSidebar"] {
-    background: linear-gradient(
-        180deg,
-        #15102F,
-        #151936 55%,
-        #102442
-    );
-    border-right: 1px solid rgba(126, 93, 255, 0.4);
-}
+    [data-testid="stSidebar"] {
+        background: linear-gradient(
+            180deg,
+            #15102F,
+            #151936 55%,
+            #102442
+        );
+    }
 
-h1 {
-    color: #B7B4FF !important;
-    font-weight: 800 !important;
-    letter-spacing: -1px;
-}
+    h1, h2, h3 {
+        color: #C4B5FD !important;
+    }
 
-h2, h3 {
-    color: #C4B5FD !important;
-}
+    [data-testid="stChatMessage"] {
+        background: rgba(20,28,57,.94);
+        border: 1px solid rgba(89,99,171,.55);
+        border-radius: 15px;
+    }
 
-p, label, li {
-    color: #DCE4FF;
-}
-
-.brand-title {
-    color: #F5F3FF;
-    font-size: 1.35rem;
-    font-weight: 800;
-    line-height: 1.3;
-}
-
-.brand-icon {
-    font-size: 2.7rem;
-    filter: drop-shadow(
-        0 0 12px rgba(139, 92, 246, 0.65)
-    );
-}
-
-.subtitle {
-    color: #B9C7F5;
-    font-size: 1.12rem;
-    margin-top: 8px;
-}
-
-.description {
-    color: #A9B8DE;
-    font-size: 0.98rem;
-    line-height: 1.7;
-}
-
-.online-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    border-radius: 24px;
-    background: rgba(17, 24, 50, 0.9);
-    border: 1px solid #45418C;
-    color: #E5E7FF;
-    font-size: 0.85rem;
-}
-
-.online-dot {
-    height: 9px;
-    width: 9px;
-    background: #34D399;
-    border-radius: 50%;
-    display: inline-block;
-    box-shadow: 0 0 10px rgba(52, 211, 153, 0.7);
-}
-
-/* Standard buttons */
-
-.stButton > button,
-.stFormSubmitButton > button {
-    background: linear-gradient(
-        100deg,
-        #7138F5,
-        #394FE8
-    );
-    color: #FFFFFF;
-    border: 1px solid #7775F5;
-    border-radius: 11px;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-
-.stButton > button:hover,
-.stFormSubmitButton > button:hover {
-    border-color: #B8B6FF;
-    color: #FFFFFF;
-}
-
-/* Chat messages */
-
-[data-testid="stChatMessage"] {
-    background: rgba(20, 28, 57, 0.94);
-    border: 1px solid rgba(89, 99, 171, 0.55);
-    border-radius: 17px;
-    padding: 1rem;
-    margin-bottom: 0.8rem;
-}
-
-/* Chat input */
-
-[data-testid="stChatInput"] {
-    background: rgba(12, 19, 43, 0.98);
-    border: 1px solid #7660E9;
-    border-radius: 17px;
-    box-shadow: 0 0 20px rgba(104, 75, 255, 0.12);
-}
-
-[data-testid="stChatInput"] textarea {
-    color: #F4F5FF !important;
-    caret-color: #A78BFA;
-}
-
-[data-testid="stChatInput"] textarea::placeholder {
-    color: #8292C3 !important;
-}
-
-[data-testid="stChatInput"] button {
-    background: linear-gradient(
-        135deg,
-        #863EFF,
-        #315DF6
-    );
-    border-radius: 12px;
-}
-
-/* Text fields and panels */
-
-.stTextInput input,
-.stTextArea textarea {
-    background: #10182E;
-    color: #F1F5F9;
-    border: 1px solid #454D78;
-    border-radius: 10px;
-}
-
-[data-testid="stExpander"],
-[data-testid="stForm"] {
-    background: rgba(20, 26, 52, 0.9);
-    border: 1px solid #39385F;
-    border-radius: 13px;
-}
-
-[data-testid="stForm"] {
-    padding: 1rem;
-}
-
-.status-panel {
-    padding: 15px;
-    border: 1px solid #45418C;
-    border-radius: 15px;
-    background: rgba(27, 30, 72, 0.72);
-    margin-top: 1.2rem;
-}
-
-.status-title {
-    color: #F1F5FF;
-    font-weight: 650;
-}
-
-.status-subtitle {
-    color: #A9B8E9;
-    font-size: 0.82rem;
-    margin-top: 4px;
-}
-
-.info-panel {
-    background: rgba(22, 30, 59, 0.85);
-    border: 1px solid #45418C;
-    border-radius: 16px;
-    padding: 20px;
-    color: #DCE4FF;
-}
-
-hr {
-    border-color: rgba(106, 112, 185, 0.38);
-}
-
-[data-testid="stCaptionContainer"] {
-    color: #9DAFD7;
-}
-
-footer {
-    visibility: hidden;
-}
-</style>
-""")
+    .stButton > button {
+        background: linear-gradient(
+            100deg,
+            #7138F5,
+            #394FE8
+        );
+        color: white;
+        border: 1px solid #7775F5;
+        border-radius: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
-# ============================================================
-# 4. EVALUATION LOGGING
-# ============================================================
+# --------------------------------------------------
+# EVALUATION LOGGING
+# --------------------------------------------------
 
-def log_evaluation(route, elapsed_time, answer, evidence=""):
-    """Save response metadata for project evaluation."""
+def log_eval(route, elapsed, answer, evidence=""):
 
-    try:
-        file_exists = (
-            LOG_FILE.exists()
-            and LOG_FILE.stat().st_size > 0
+    exists = LOG.exists() and LOG.stat().st_size > 0
+
+    with LOG.open(
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as f:
+
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "timestamp",
+                "route",
+                "response_time_seconds",
+                "answer_length",
+                "retrieved_evidence",
+            ],
         )
 
-        with open(
-            LOG_FILE,
-            "a",
-            newline="",
-            encoding="utf-8",
-        ) as file:
-            writer = csv.DictWriter(
-                file,
-                fieldnames=[
-                    "timestamp",
-                    "route",
-                    "response_time_seconds",
-                    "answer_length",
-                    "retrieved_evidence",
-                ],
-            )
+        if not exists:
+            writer.writeheader()
 
-            if not file_exists:
-                writer.writeheader()
-
-            writer.writerow({
-                "timestamp": datetime.now().isoformat(
-                    timespec="seconds"
-                ),
-                "route": route,
-                "response_time_seconds": round(
-                    elapsed_time, 3
-                ),
-                "answer_length": len(answer),
-                "retrieved_evidence": evidence[:1000],
-            })
-
-    except OSError as exc:
-        print(f"Evaluation logging error: {exc}")
+        writer.writerow({
+            "timestamp": datetime.now().isoformat(
+                timespec="seconds"
+            ),
+            "route": route,
+            "response_time_seconds": round(elapsed, 3),
+            "answer_length": len(answer),
+            "retrieved_evidence": evidence[:1000],
+        })
 
 
-# ============================================================
-# 5. STUDENT RECORD FORMATTING
-# ============================================================
+# --------------------------------------------------
+# IDENTIFY PRIVATE QUESTIONS
+# --------------------------------------------------
 
-def format_student_result(result, student_id, record_type):
-    if not isinstance(result, dict):
-        return str(result)
+def private_question(q):
 
-    if result.get("error"):
-        return str(result["error"])
-
-    if (
-        record_type == "fee"
-        and result.get("fee_status") is not None
-    ):
-        return (
-            f"Your fee status for "
-            f"**{result.get('student_id', student_id)}** "
-            f"is **{result['fee_status']}**."
-        )
-
-    if (
-        record_type == "scholarship"
-        and result.get("scholarship_status") is not None
-    ):
-        return (
-            f"Your scholarship status for "
-            f"**{result.get('student_id', student_id)}** "
-            f"is **{result['scholarship_status']}**."
-        )
-
-    return "\n\n".join(
-        f"**{str(key).replace('_', ' ').title()}:** {value}"
-        for key, value in result.items()
-    )
-
-
-# ============================================================
-# 6. AGENT QUESTION ROUTER
-# ============================================================
-
-def process_question(question):
-    q = question.lower().strip()
-
-    # Student fee and scholarship lookup
-    record_phrases = [
-        "my fee status",
-        "check fee status",
-        "check my fees",
-        "check fee",
-        "my scholarship status",
-        "check scholarship status",
-        "check my scholarship",
-        "check scholarship",
-        "what is my fee",
-        "what is my scholarship",
-        "fee status for",
-        "scholarship status for",
+    private_terms = [
+        "my fee",
+        "my fees",
+        "fee status",
+        "fee details",
+        "pending amount",
+        "my scholarship",
+        "scholarship status",
+        "my attendance",
+        "my profile",
+        "my academic",
+        "my student details",
+        "show my student details",
+        "show my details",
+        "student details",
+        "my details",
+        "my record",
+        "show my record",
+        "academic details",
+        "student information",
     ]
 
-    if any(phrase in q for phrase in record_phrases):
-        match = re.search(
-            r"\bSTU\d+\b",
+    return any(term in q for term in private_terms)
+
+
+# --------------------------------------------------
+# MAIN QUESTION PROCESSING
+# --------------------------------------------------
+
+def process_question(question):
+
+    q = question.lower().strip()
+
+    sid = (
+        st.session_state.student["student_id"]
+        if st.session_state.student
+        else None
+    )
+
+    requested = re.search(
+        r"\bSTU\d+\b",
+        question,
+        re.I
+    )
+
+    # Sensitive changes must go through approval.
+
+    change_words = [
+        "change my",
+        "update my",
+        "correct my",
+        "modify my",
+    ]
+
+    if any(word in q for word in change_words):
+
+        if not sid:
+            record(
+                "Anonymous",
+                "Sensitive change request",
+                "Blocked",
+                "Login required",
+            )
+
+            return (
+                "security",
+                "Please log in before requesting a change to your record.",
+                "",
+            )
+
+        action = "Student-requested record change"
+
+        req = create_request(
+            sid,
+            action,
             question,
-            re.IGNORECASE,
         )
 
-        if not match:
+        record(
+            sid,
+            action,
+            "Approval required",
+            "Pending",
+            req["request_id"],
+        )
+
+        return (
+            "approval",
+            f"Your request **{req['request_id']}** has been submitted for human approval. No record has been changed yet.",
+            "",
+        )
+
+    # Private student information lookup.
+
+    if private_question(q) or requested:
+
+        if not sid:
+
+            record(
+                "Anonymous",
+                "Private student lookup",
+                "Blocked",
+                "Login required",
+            )
+
             return (
-                "student_tool",
-                "Please provide a sample student ID, "
-                "such as STU001, so I can check the "
-                "corresponding record.",
+                "security",
+                "Please log in with your Student ID to access personal student information.",
                 "",
             )
 
-        student_id = match.group(0).upper()
+        # Block access to another student's record.
 
-        try:
-            if "scholarship" in q:
-                result = check_scholarship_status(student_id)
-                answer = format_student_result(
-                    result, student_id, "scholarship"
-                )
-            else:
-                result = check_fee_status(student_id)
-                answer = format_student_result(
-                    result, student_id, "fee"
-                )
+        if requested and requested.group(0).upper() != sid:
 
-        except Exception as exc:
-            print(f"Student tool error: {exc}")
+            record(
+                sid,
+                "Access another student's record",
+                "Blocked",
+                "Denied",
+                requested.group(0).upper(),
+            )
+
             return (
-                "student_tool",
-                "I couldn't retrieve that student record. "
-                "Please check the student ID and try again.",
+                "security",
+                "🔒 **Access denied.** You can only view your own student information.",
                 "",
             )
 
-        return "student_tool", answer, ""
+        target = sid
 
-    # College policy retrieval
-    policy_keywords = [
+        # Profile lookup.
+
+        if any(
+            term in q
+            for term in [
+                "student details",
+                "my details",
+                "my record",
+                "student information",
+                "my profile",
+                "profile",
+            ]
+        ):
+
+            result = get_my_profile(sid)
+
+        # Scholarship lookup.
+
+        elif "scholarship" in q:
+
+            result = check_scholarship_status(
+                target,
+                sid,
+            )
+
+        # Academic lookup.
+
+        elif "attendance" in q or "academic" in q:
+
+            result = get_academic_details(
+                target,
+                sid,
+            )
+
+        # Fee lookup.
+
+        else:
+
+            result = check_fee_status(
+                target,
+                sid,
+            )
+
+        route = "student_tool"
+
+        if result.get("error"):
+
+            record(
+                sid,
+                "Student record lookup",
+                "Blocked",
+                result["error"],
+            )
+
+            return route, result["error"], ""
+
+        record(
+            sid,
+            "View own student record",
+            "Allowed",
+            "Success",
+            route,
+        )
+
+        lines = [
+            f"**{key.replace('_', ' ').title()}:** {value}"
+            for key, value in result.items()
+            if value
+        ]
+
+        return (
+            route,
+            "Here is your authorized student information:\n\n"
+            + "\n\n".join(lines),
+            "",
+        )
+
+    # University policy search.
+
+    policy_terms = [
         "policy",
         "what should i do",
-        "fee payment process",
+        "fee payment",
         "pending fees",
-        "fees are pending",
         "payment deadline",
         "accounts office",
         "scholarship application",
-        "scholarship policy",
-        "under review",
         "eligibility",
         "missing documents",
         "academic support",
@@ -449,267 +380,256 @@ def process_question(question):
         "college rules",
         "how do i pay",
         "how to pay",
-        "leave policy",
-        "attendance policy",
-        "college procedure",
-        "course change",
-        "college deadline",
     ]
 
-    if any(keyword in q for keyword in policy_keywords):
-        try:
-            results = search_policy(question)
+    if any(term in q for term in policy_terms):
 
-        except Exception as exc:
-            print(f"Policy search error: {exc}")
+        results = search_policy(question)
+
+        evidence = "\n\n".join(
+            item["text"]
+            for item in results
+            if item.get("text")
+        )
+
+        if not evidence:
+
             return (
                 "policy_search",
-                "I couldn't retrieve policy information. "
-                "Please check that data/student_policy.txt exists.",
-                "",
-            )
-
-        if isinstance(results, dict):
-            if results.get("error"):
-                return (
-                    "policy_search",
-                    "Policy retrieval encountered a problem. "
-                    "Please try again.",
-                    "",
-                )
-
-            results = results.get("results", [])
-
-        if not results:
-            return (
-                "policy_search",
-                "I couldn't find relevant information in the "
-                "supplied college policy document. Please contact "
-                "the appropriate college office for confirmation.",
-                "",
-            )
-
-        evidence_parts = []
-
-        for item in results:
-            if isinstance(item, dict) and item.get("text"):
-                evidence_parts.append(str(item["text"]))
-            elif isinstance(item, str):
-                evidence_parts.append(item)
-
-        evidence = "\n\n".join(evidence_parts)
-
-        if not evidence.strip():
-            return (
-                "policy_search",
-                "No usable policy text was retrieved. "
-                "Please contact the relevant college office.",
+                "I couldn't find relevant information in the supplied policy document. Please contact the appropriate college office.",
                 "",
             )
 
         context = (
-            "Answer the policy question using only the supplied "
-            "policy evidence. Do not invent rules, deadlines, "
-            "or procedures. If the evidence does not answer the "
-            "question, say the document does not provide enough "
-            "information.\n\n"
-            f"Policy evidence:\n{evidence}"
+            "Use only this supplied policy evidence for official "
+            "policy claims. Do not invent rules or deadlines.\n\n"
+            + evidence
         )
 
-        preferences = load_memory()
+        prefs = load_memory()
 
-        if preferences:
+        if prefs:
+
             context += (
-                "\n\nResponse style preferences: "
-                + "; ".join(map(str, preferences))
+                "\n\nResponse preferences: "
+                + "; ".join(prefs)
             )
 
-        try:
-            answer = ask_local_ai(question, context=context)
-
-        except Exception as exc:
-            print(f"Local AI error: {exc}")
-            return (
-                "policy_search",
-                "I found policy information, but the AI service "
-                "could not be reached. Please check that Ollama "
-                "is running.",
-                evidence,
-            )
-
-        return "policy_search + local_ai", str(answer), evidence
-
-    # General questions use local AI
-    preferences = load_memory()
-    context = None
-
-    if preferences:
-        context = (
-            "Response style preferences: "
-            + "; ".join(map(str, preferences))
-        )
-
-    try:
-        answer = ask_local_ai(question, context=context)
-        return "local_ai", str(answer), ""
-
-    except Exception as exc:
-        print(f"Local AI error: {exc}")
         return (
-            "error",
-            "I couldn't connect to the local AI model. "
-            "Please confirm that Ollama is running and your "
-            "configured model is available.",
-            "",
+            "policy_search + local_ai",
+            str(
+                ask_local_ai(
+                    question,
+                    context=context,
+                )
+            ),
+            evidence,
         )
 
+    # General university questions.
 
-# ============================================================
-# 7. SIDEBAR
-# ============================================================
+    prefs = load_memory()
+
+    context = (
+        "Response preferences: " + "; ".join(prefs)
+        if prefs
+        else None
+    )
+
+    return (
+        "local_ai",
+        str(
+            ask_local_ai(
+                question,
+                context=context,
+            )
+        ),
+        "",
+    )
+
+
+# --------------------------------------------------
+# SIDEBAR AND NAVIGATION
+# --------------------------------------------------
 
 with st.sidebar:
 
-    render_html("""
-        <div style="
-            display:flex;
-            align-items:center;
-            gap:12px;
-        ">
-            <div class="brand-icon">🎓</div>
-            <div class="brand-title">
-                Student Support<br>Agent
-            </div>
-        </div>
-    """)
+    st.markdown("## 🎓 Student Support Agent")
 
-    st.markdown(
-        "<div style='height:24px'></div>",
-        unsafe_allow_html=True,
-    )
+    st.caption("Universal University Assistant")
+
+    if st.session_state.student:
+
+        student = st.session_state.student
+
+        st.success(
+            f"Signed in: {student['name']}"
+        )
+
+        st.caption(
+            f"Student ID: {student['student_id']}"
+        )
+
+        if st.button(
+            "Log out",
+            use_container_width=True,
+        ):
+
+            record(
+                student["student_id"],
+                "Logout",
+                "Allowed",
+                "Success",
+            )
+
+            st.session_state.student = None
+            st.session_state.messages = []
+
+            st.rerun()
+
+    else:
+
+        st.info("Not signed in")
 
     page = st.radio(
         "Navigation",
         [
-            "💬 Chat",
-            "⚙️ Saved Preferences",
-            "ⓘ About",
+            "💬 Universal Search",
+            "🔐 Student Login",
+            "📝 Approval Requests",
+            "⚙️ Preferences",
+            "📊 Audit & Evaluation",
         ],
-        label_visibility="collapsed",
-        key="navigation",
     )
 
-    st.markdown("---")
+    st.divider()
 
-    render_html("""
-        <div class="status-panel">
-            <div class="status-title">
-                🟢 AI Assistant
-            </div>
-            <div class="status-subtitle">
-                Powered by your local model
-            </div>
-        </div>
-    """)
+    st.caption("Local AI powered by Ollama")
 
-    st.markdown(
-        "<div style='height:12px'></div>",
-        unsafe_allow_html=True,
+
+# --------------------------------------------------
+# STUDENT LOGIN
+# --------------------------------------------------
+
+if page == "🔐 Student Login":
+
+    st.title("🔐 Student Login")
+
+    st.write(
+        "Sign in to access your own private student information."
     )
 
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.last_evidence = ""
-        st.rerun()
+    with st.form("login_form"):
+
+        student_id = st.text_input(
+            "Student ID",
+            placeholder="e.g. STU001",
+        ).upper().strip()
+
+        password = st.text_input(
+            "Password",
+            type="password",
+        )
+
+        submitted = st.form_submit_button(
+            "Sign in",
+            use_container_width=True,
+        )
+
+    if submitted:
+
+        user = authenticate(
+            student_id,
+            password,
+        )
+
+        if user:
+
+            st.session_state.student = user
+            st.session_state.messages = []
+
+            record(
+                student_id,
+                "Login",
+                "Allowed",
+                "Success",
+            )
+
+            st.success(
+                f"Welcome, {user['name']}!"
+            )
+
+            st.rerun()
+
+        else:
+
+            record(
+                student_id or "Unknown",
+                "Login",
+                "Denied",
+                "Invalid credentials",
+            )
+
+            st.error(
+                "Invalid Student ID or password."
+            )
+
+    with st.expander("Demo login credentials"):
+
+        st.write("STU001 / student123")
+        st.write("STU002 / student123")
+        st.write("STU003 / student123")
 
 
-# ============================================================
-# 8. CHAT PAGE - NO SUGGESTED QUESTION CARDS
-# ============================================================
+# --------------------------------------------------
+# UNIVERSAL SEARCH
+# --------------------------------------------------
 
-if page == "💬 Chat":
+elif page == "💬 Universal Search":
 
-    # Landing screen: title and description only.
-    # All four suggested-question cards have been removed.
+    st.title("🎓 Student Support Agent")
 
-    if not st.session_state.messages:
+    st.caption(
+        "Ask general university questions or sign in "
+        "to access your personal student information."
+    )
 
-        _, status_col = st.columns([5, 1])
+    if st.session_state.student:
 
-        with status_col:
-            render_html("""
-                <div class="online-badge">
-                    <span class="online-dot"></span>
-                    Online
-                </div>
-            """)
+        student = st.session_state.student
 
-        render_html("""
-            <div style="
-                text-align:center;
-                padding-top:60px;
-                padding-bottom:35px;
-            ">
-                <div style="
-                    font-size:76px;
-                    line-height:1.3;
-                    filter:drop-shadow(
-                        0 0 18px rgba(139,92,246,0.6)
-                    );
-                ">🎓</div>
-
-                <h1 style="
-                    font-size:2.8rem;
-                    margin-bottom:8px;
-                ">
-                    Student Support Agent
-                </h1>
-
-                <div class="subtitle">
-                    Your personal campus assistant ✨
-                </div>
-
-                <div class="description" style="
-                    max-width:680px;
-                    margin:14px auto 0 auto;
-                ">
-                    Ask anything about your academic journey,
-                    college policies, student records, or general
-                    queries.
-                </div>
-            </div>
-        """)
+        st.info(
+            f"Personalized session: {student['name']} "
+            f"({student['student_id']}). "
+            "Private lookups are restricted to this account."
+        )
 
     else:
-        _, status_col = st.columns([5, 1])
 
-        with status_col:
-            render_html("""
-                <div class="online-badge">
-                    <span class="online-dot"></span>
-                    Online
-                </div>
-            """)
+        st.warning(
+            "You can use universal search without signing in. "
+            "Log in to access personal student records."
+        )
 
-    # Display conversation history
+    with st.expander("Example questions"):
+
+        st.markdown(
+            "- What should I do if my fees are pending?\n"
+            "- Explain the scholarship application process.\n"
+            "- What is my fee status?\n"
+            "- What is my scholarship status?\n"
+            "- Show my attendance.\n"
+            "- Explain Python loops."
+        )
+
     for message in st.session_state.messages:
 
         with st.chat_message(message["role"]):
+
             st.markdown(message["content"])
 
-            if (
-                message["role"] == "assistant"
-                and message.get("latency") is not None
-            ):
-                st.caption(
-                    f"Response time: "
-                    f"{message['latency']:.2f} seconds"
-                )
-
-    # Chat input remains available
     question = st.chat_input(
-        "Ask me questions...",
-        key="chat_input",
+        "Ask anything about university support..."
     )
 
     if question:
@@ -720,43 +640,47 @@ if page == "💬 Chat":
         })
 
         with st.chat_message("user"):
+
             st.markdown(question)
 
         with st.chat_message("assistant"):
 
             with st.spinner("Thinking..."):
-                start_time = time.perf_counter()
-                evidence = ""
+
+                start = time.perf_counter()
 
                 try:
+
                     route, answer, evidence = process_question(
                         question
                     )
 
                 except Exception as exc:
-                    print(f"Question processing error: {exc}")
+
+                    print("Processing error:", exc)
 
                     route = "error"
+
                     answer = (
-                        "Something went wrong while processing "
-                        "your question. Please check the VS Code "
-                        "terminal and confirm that Ollama and "
-                        "the project files are available."
+                        "Something went wrong. "
+                        "Check the terminal and try again."
                     )
 
-                elapsed_time = (
-                    time.perf_counter() - start_time
+                    evidence = ""
+
+                elapsed = (
+                    time.perf_counter() - start
                 )
 
             st.markdown(answer)
 
             st.caption(
-                f"Response time: {elapsed_time:.2f} seconds"
+                f"Response time: {elapsed:.2f} seconds"
             )
 
-            log_evaluation(
+            log_eval(
                 route,
-                elapsed_time,
+                elapsed,
                 answer,
                 evidence,
             )
@@ -765,163 +689,287 @@ if page == "💬 Chat":
             "role": "assistant",
             "content": answer,
             "route": route,
-            "latency": elapsed_time,
+            "latency": elapsed,
         })
 
         st.session_state.last_evidence = evidence
+
         st.rerun()
 
-    # Show retrieved policy evidence when available
     if st.session_state.last_evidence:
-        with st.expander("🔎 View policy evidence"):
-            st.text(st.session_state.last_evidence)
+
+        with st.expander("View retrieved policy evidence"):
+
+            st.text(
+                st.session_state.last_evidence
+            )
 
 
-# ============================================================
-# 9. SAVED PREFERENCES PAGE
-# ============================================================
+# --------------------------------------------------
+# APPROVAL REQUESTS
+# --------------------------------------------------
 
-elif page == "⚙️ Saved Preferences":
+elif page == "📝 Approval Requests":
+
+    st.title("📝 Human Approval")
+
+    st.caption(
+        "Sensitive changes remain pending until a reviewer approves them."
+    )
+
+    if not st.session_state.student:
+
+        st.warning(
+            "Sign in to view your requests. "
+            "A reviewer can use the demo review section below."
+        )
+
+    else:
+
+        mine = list_requests(
+            st.session_state.student["student_id"]
+        )
+
+        st.subheader("Your requests")
+
+        if mine:
+
+            st.dataframe(
+                mine,
+                use_container_width=True,
+            )
+
+        else:
+
+            st.info("You have no approval requests.")
+
+    with st.expander("Reviewer demonstration"):
+
+        st.warning(
+            "Demo reviewer area. In a real deployment, "
+            "protect this page with a separate administrator account."
+        )
+
+        code = st.text_input(
+            "Reviewer passcode",
+            type="password",
+        )
+
+        if code == "ADMIN2026":
+
+            pending = [
+                request
+                for request in list_requests()
+                if request["status"] == "Pending"
+            ]
+
+            if not pending:
+
+                st.info("No pending requests.")
+
+            for request in pending:
+
+                st.write(
+                    f"{request['request_id']} · "
+                    f"{request['student_id']} · "
+                    f"{request['action']} · "
+                    f"{request['new_value']}"
+                )
+
+                col1, col2 = st.columns(2)
+
+                if col1.button(
+                    "Approve",
+                    key="a" + request["request_id"],
+                ):
+
+                    review_request(
+                        request["request_id"],
+                        "Approved",
+                    )
+
+                    record(
+                        "Demo Administrator",
+                        "Review sensitive request",
+                        "Approved",
+                        "Request approved",
+                        request["request_id"],
+                    )
+
+                    st.rerun()
+
+                if col2.button(
+                    "Reject",
+                    key="r" + request["request_id"],
+                ):
+
+                    review_request(
+                        request["request_id"],
+                        "Rejected",
+                    )
+
+                    record(
+                        "Demo Administrator",
+                        "Review sensitive request",
+                        "Rejected",
+                        "Request rejected",
+                        request["request_id"],
+                    )
+
+                    st.rerun()
+
+        elif code:
+
+            st.error("Incorrect reviewer passcode.")
+
+
+# --------------------------------------------------
+# SAVED PREFERENCES
+# --------------------------------------------------
+
+elif page == "⚙️ Preferences":
 
     st.title("⚙️ Saved Preferences")
 
-    render_html("""
-        <div class="description">
-            Save non-sensitive preferences so the assistant can
-            adapt its responses in future sessions.
-        </div>
-    """)
-
-    st.markdown(
-        "<div style='height:18px'></div>",
-        unsafe_allow_html=True,
+    st.caption(
+        "Only non-sensitive response preferences can be stored."
     )
 
-    with st.form("preference_form", clear_on_submit=True):
+    with st.form(
+        "pref",
+        clear_on_submit=True,
+    ):
 
-        preference = st.text_input(
-            "Your preference",
-            placeholder="e.g. Use simple explanations",
+        pref = st.text_input(
+            "Preference",
+            placeholder="e.g. Explain things in simple language",
         )
 
-        save_clicked = st.form_submit_button(
-            "✨ Save Preference",
-            use_container_width=True,
+        save = st.form_submit_button(
+            "Save preference"
         )
 
-    if save_clicked:
+    if save:
 
-        if preference.strip():
+        result = save_preference(pref)
 
-            try:
-                result = save_preference(preference.strip())
+        if result.startswith("Preference saved"):
 
-                if result.startswith("Preference saved"):
-                    st.success(result)
-                elif "already saved" in result.lower():
-                    st.info(result)
-                else:
-                    st.warning(result)
-
-            except Exception as exc:
-                st.error(f"Could not save preference: {exc}")
+            st.success(result)
 
         else:
-            st.warning("Please enter a preference first.")
 
-    st.markdown("---")
-    st.subheader("Your saved preferences")
+            st.warning(result)
 
-    preferences = load_memory()
+    for item in load_memory():
 
-    if preferences:
+        st.write("• " + item)
 
-        for item in preferences:
-            safe_item = escape(str(item))
+    if st.button("Clear preferences"):
 
-            render_html(f"""
-                <div class="info-panel"
-                     style="margin-bottom:10px;">
-                    <span style="color:#A78BFA;">✦</span>
-                    {safe_item}
-                </div>
-            """)
+        st.success(clear_memory())
 
-        if st.button(
-            "🗑️ Clear Saved Preferences",
-            use_container_width=True,
-        ):
-
-            try:
-                clear_memory()
-                st.success("Saved preferences cleared.")
-                st.rerun()
-
-            except Exception as exc:
-                st.error(
-                    f"Could not clear preferences: {exc}"
-                )
-
-    else:
-        st.info("No saved preferences yet. Add one above.")
+        st.rerun()
 
 
-# ============================================================
-# 10. ABOUT PAGE
-# ============================================================
+# --------------------------------------------------
+# AUDIT AND EVALUATION
+# --------------------------------------------------
 
-elif page == "ⓘ About":
+elif page == "📊 Audit & Evaluation":
 
-    st.title("ⓘ About the Student Support Agent")
-
-    render_html("""
-        <div class="info-panel">
-            <h3>🎓 Your campus assistant</h3>
-
-            This project demonstrates an intelligent
-            student-support agent that chooses an appropriate
-            source for each question.
-
-            <br><br>
-
-            <b style="color:#A5B4FC;">Local AI</b><br>
-            Uses your configured Ollama model to answer
-            general questions.
-
-            <br><br>
-
-            <b style="color:#C084FC;">Student tools</b><br>
-            Looks up sample fee and scholarship records
-            using student IDs.
-
-            <br><br>
-
-            <b style="color:#67D8FF;">Policy retrieval</b><br>
-            Searches the supplied college policy document
-            for relevant information before generating
-            policy-related answers.
-
-            <br><br>
-
-            <b style="color:#A5B4FC;">Persistent memory</b><br>
-            Stores permitted response preferences across
-            sessions.
-
-            <br><br>
-
-            <b style="color:#C084FC;">Evaluation logging</b><br>
-            Records response times, routes, answer lengths,
-            and retrieved policy evidence.
-        </div>
-    """)
-
-    st.markdown(
-        "<div style='height:16px'></div>",
-        unsafe_allow_html=True,
-    )
+    st.title("📊 Audit & Evaluation")
 
     st.caption(
-        "This application uses sample student records. "
-        "Confirm important college information with the "
-        "relevant office."
+        "Demonstration logs: access decisions, approvals, "
+        "and response evaluation."
     )
+
+    if st.session_state.student:
+
+        st.info(
+            "Students should only review their own audit events "
+            "in a production system. This demo page shows project evaluation records."
+        )
+
+    audit_file = DATA / "audit_logs.csv"
+
+    eval_file = DATA / "evaluation_logs.csv"
+
+    if audit_file.exists():
+
+        import pandas as pd
+
+        audit_df = pd.read_csv(audit_file)
+
+        if st.session_state.student:
+
+            st.subheader("Your audit records")
+
+            own = audit_df[
+                audit_df["actor"]
+                == st.session_state.student["student_id"]
+            ]
+
+            st.dataframe(
+                own,
+                use_container_width=True,
+            )
+
+            st.caption(
+                "Other students' audit records are not displayed."
+            )
+
+        else:
+
+            st.info(
+                "Sign in as a student to view your own events, "
+                "or use reviewer access."
+            )
+
+        with st.expander(
+            "Reviewer: view complete audit trail"
+        ):
+
+            reviewer_code = st.text_input(
+                "Reviewer passcode for audit",
+                type="password",
+            )
+
+            if reviewer_code == "ADMIN2026":
+
+                st.dataframe(
+                    audit_df,
+                    use_container_width=True,
+                )
+
+            elif reviewer_code:
+
+                st.error("Incorrect reviewer passcode.")
+
+    else:
+
+        st.info("No audit events recorded yet.")
+
+    if eval_file.exists():
+
+        st.subheader("Evaluation records")
+
+        st.dataframe(
+            __import__("pandas").read_csv(eval_file),
+            use_container_width=True,
+        )
+
+    else:
+
+        st.info("No evaluation records yet.")
+
+
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+
+st.caption(
+    "Academic demonstration using fictional sample student data. "
+    "Confirm official information with the relevant university office."
+)
